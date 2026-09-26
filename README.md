@@ -32,8 +32,8 @@ backend/
   src/modules                 # auth/jobs/candidates/resumes/interviews/offers/audit
 frontend/
   src/constants/enums.ts      # 前端共享枚举
-  src/components              # CandidateCard / PipelineKanban / InterviewTimeline
-  src/pages                   # jobs、job detail、candidates、candidate detail、interviews
+  src/components              # CandidateCard / PipelineKanban / InterviewTimeline / OfferCard / OfferApprovalTimeline
+  src/pages                   # jobs、job detail、candidates、candidate detail、interviews、offers 审批工作台
   src/stores                  # authStore / jobStore
 ```
 
@@ -42,7 +42,9 @@ frontend/
 - 职位 Job：创建、编辑、列表筛选、详情、发布/暂停/关闭/重新打开/归档状态机。
 - 候选人 Candidate + 简历 Resume：候选人检索、投递记录、简历状态推进、看板拖拽流转。
 - 面试 Interview：日历视图、安排面试、面试官反馈、评分和结果记录。
-- Offer：创建草稿、审批、发送、接受/拒绝/撤回状态机。
+- Offer：创建草稿、提交审批、招聘经理审批（通过/写明原因拒绝）、版本化条件管理、发送、接受/拒绝/撤回状态机。
+  - HR 创建或调整薪资/入职日期后进入待审批（PENDING_APPROVAL），每次条件调整产生新版本；招聘经理只能处理分配给自己的 Offer。
+  - 审批通过后条件再改动会回到待审批，旧审批（approvedVersion）失效、不能用来发送；已发送的录用通知只读、不可再编辑。
 - RBAC：HR、INTERVIEWER、HIRING_MANAGER、ADMIN 四类角色；后端 `@Roles()` 控制接口，前端菜单和按钮按角色显示。
 - 数据范围：面试官请求面试列表时仅返回分配给自己的面试；招聘经理按部门过滤职位。
 - 操作审计：职位、简历、面试、Offer 状态变更写入 `audit_logs`，管理员可在候选人详情页查看状态流转历史。
@@ -97,7 +99,8 @@ docker compose up --build
 - `GET /api/candidates/:id/resumes`、`GET /api/candidates/:id/interviews`、`GET /api/candidates/:id/offers`
 - `POST /api/resumes`、`PATCH /api/resumes/:id/status`
 - `GET /api/interviews?startDate=&endDate=&interviewerId=`、`POST /api/interviews`、`PATCH /api/interviews/:id`
-- `POST /api/offers`、`PATCH /api/offers/:id/status`
+- `POST /api/offers`（创建草稿，审批人自动取职位招聘经理）、`GET /api/offers/pending`（分配给当前经理的待审批列表）
+- `POST /api/offers/:id/submit`、`PATCH /api/offers/:id/conditions`、`POST /api/offers/:id/approve`、`POST /api/offers/:id/reject`（原因必填）、`POST /api/offers/:id/send`、`PATCH /api/offers/:id/status`
 - `GET /api/audit-logs`、`GET /api/audit-logs/candidate/:id`
 
 ## 枚举使用位置清单
