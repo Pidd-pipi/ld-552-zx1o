@@ -7,14 +7,14 @@ export class AuditLogInterceptor implements NestInterceptor {
   constructor(private readonly prisma: PrismaService) {}
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const req = context.switchToHttp().getRequest();
-    const beforeStatus = req.body?.beforeStatus;
-    const afterStatus = req.body?.status ?? req.body?.result;
+    const bodyAfterStatus = req.body?.status ?? req.body?.result;
     return next.handle().pipe(tap(async (payload: any) => {
       const entity = this.detectEntity(req.path);
-      if (!entity || !afterStatus) return;
+      // 动作型接口（submit/review/send）body 中没有状态，以响应 payload 的状态为准
+      const finalAfter = payload?.status ?? payload?.result ?? bodyAfterStatus;
+      if (!entity || !finalAfter) return;
       const entityId = Number(req.params?.id || payload?.id || payload?.resumeId || payload?.offerId || 0);
-      const finalAfter = payload?.status ?? payload?.result ?? afterStatus;
-      const finalBefore = beforeStatus ?? payload?.beforeStatus;
+      const finalBefore = req.body?.beforeStatus ?? payload?.beforeStatus;
       if (!entityId || finalBefore === finalAfter) return;
       await this.prisma.auditLog.create({ data: {
         actorId: req.user?.sub,

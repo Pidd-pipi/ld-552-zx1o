@@ -42,10 +42,10 @@ frontend/
 - 职位 Job：创建、编辑、列表筛选、详情、发布/暂停/关闭/重新打开/归档状态机。
 - 候选人 Candidate + 简历 Resume：候选人检索、投递记录、简历状态推进、看板拖拽流转。
 - 面试 Interview：日历视图、安排面试、面试官反馈、评分和结果记录。
-- Offer：创建草稿、审批、发送、接受/拒绝/撤回状态机。
+- Offer：HR 创建草稿、提交审批、按版本管理薪资/入职日期条件；招聘经理仅处理分配给自己的 Offer、拒绝必填原因；审批通过后条件变更自动回到待审批并生成新版本，旧审批不可用于发送；发送后锁定不可编辑，支持接受/拒绝/撤回状态机。
 - RBAC：HR、INTERVIEWER、HIRING_MANAGER、ADMIN 四类角色；后端 `@Roles()` 控制接口，前端菜单和按钮按角色显示。
-- 数据范围：面试官请求面试列表时仅返回分配给自己的面试；招聘经理按部门过滤职位。
-- 操作审计：职位、简历、面试、Offer 状态变更写入 `audit_logs`，管理员可在候选人详情页查看状态流转历史。
+- 数据范围：面试官请求面试列表时仅返回分配给自己的面试；招聘经理按部门过滤职位，Offer 仅可查看/审批本人担任招聘经理的职位。
+- 操作审计：职位、简历、面试、Offer 状态变更写入 `audit_logs`，候选人详情页可查看状态流转历史；Offer 每次提交/审批按条件版本（OfferVersion + OfferApproval）留存完整审批链。
 
 ## 默认账号
 
@@ -97,8 +97,25 @@ docker compose up --build
 - `GET /api/candidates/:id/resumes`、`GET /api/candidates/:id/interviews`、`GET /api/candidates/:id/offers`
 - `POST /api/resumes`、`PATCH /api/resumes/:id/status`
 - `GET /api/interviews?startDate=&endDate=&interviewerId=`、`POST /api/interviews`、`PATCH /api/interviews/:id`
-- `POST /api/offers`、`PATCH /api/offers/:id/status`
+- `GET /api/offers?status=`、`GET /api/offers/:id`、`POST /api/offers`、`PATCH /api/offers/:id`
+- `POST /api/offers/:id/submit`、`POST /api/offers/:id/review`、`POST /api/offers/:id/send`、`PATCH /api/offers/:id/status`
 - `GET /api/audit-logs`、`GET /api/audit-logs/candidate/:id`
+
+### Offer 版本化审批流程
+
+Offer 状态机在原有 `DRAFT / APPROVED / SENT / ACCEPTED / REJECTED / WITHDRAWN` 基础上新增 `PENDING_APPROVAL`（待审批）：
+
+```text
+DRAFT ──提交──▶ PENDING_APPROVAL ──通过──▶ APPROVED ──发送──▶ SENT ──▶ ACCEPTED
+                   │                       (可继续调整条件)        ├─▶ REJECTED（候选人拒绝）
+                   └──拒绝（必填原因）──▶ REJECTED ──调整/重新提交──▶ PENDING_APPROVAL      └─▶ WITHDRAWN
+APPROVED ──HR 修改薪资/入职日期──▶ PENDING_APPROVAL（version+1，旧审批失效）
+```
+
+- 每次提交审批都对当时的薪资与入职日期留存 `OfferVersion` 快照，并写一条 `OfferApproval(SUBMITTED)`；审批通过/拒绝（含原因）同样写入对应版本的审批记录。
+- Offer 上记录当前版本 `version` 与已审批版本 `approvedVersion`；发送时两者必须一致，审批后条件再改动会清空 `approvedVersion`，旧审批无法用于发送。
+- `SENT / ACCEPTED / WITHDRAWN` 后条件锁定，不能再编辑、提交或审批；候选人回执仍可将 `SENT` 流转到 `ACCEPTED / REJECTED / WITHDRAWN`。
+- 前端入口：侧边栏「Offer 管理」（HR/Admin 全量工作台）/「Offer 审批」（招聘经理只看待审批队列）；候选人详情页「Offer 状态」Tab 可创建 Offer，并查看当前条件、分版本审批记录与状态变化。
 
 ## 枚举使用位置清单
 

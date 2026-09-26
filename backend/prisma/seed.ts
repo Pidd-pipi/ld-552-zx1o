@@ -8,6 +8,8 @@ async function main() {
     return;
   }
   await prisma.auditLog.deleteMany();
+  await prisma.offerApproval.deleteMany();
+  await prisma.offerVersion.deleteMany();
   await prisma.offer.deleteMany();
   await prisma.interview.deleteMany();
   await prisma.resume.deleteMany();
@@ -28,8 +30,29 @@ async function main() {
   const r1 = await prisma.resume.create({ data: { candidateId: c1.id, jobId: job1.id, resumeUrl: 'https://files.example.com/resumes/xuchen.pdf', coverLetter: '希望加入高质量工程团队。', status: ResumeStatus.INTERVIEWING } });
   const r2 = await prisma.resume.create({ data: { candidateId: c2.id, jobId: job1.id, resumeUrl: 'https://files.example.com/resumes/wangyining.pdf', status: ResumeStatus.SCREENING } });
   await prisma.interview.create({ data: { resumeId: r1.id, interviewerId: interviewer.id, round: 1, scheduledAt: new Date(Date.now() + 86400000), duration: 60, type: InterviewType.TECHNICAL, result: InterviewResult.PENDING, notes: '重点考察组件架构与状态管理。' } });
-  await prisma.offer.create({ data: { candidateId: c1.id, jobId: job1.id, salary: '42000', startDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30), status: OfferStatus.DRAFT, approverId: manager.id } });
+
+  // Offer 1：条件被调整过的待审批 Offer（v1 已拒绝，v2 等待招聘经理审批）
+  const offer1 = await prisma.offer.create({ data: { candidateId: c1.id, jobId: job1.id, salary: '45000', startDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30), status: OfferStatus.PENDING_APPROVAL, approverId: manager.id, version: 2 } });
+  const ov1v1 = await prisma.offerVersion.create({ data: { offerId: offer1.id, version: 1, salary: '42000', startDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 45), createdById: hr.id } });
+  await prisma.offerApproval.create({ data: { offerId: offer1.id, versionId: ov1v1.id, decision: 'SUBMITTED', actorId: hr.id } });
+  await prisma.offerApproval.create({ data: { offerId: offer1.id, versionId: ov1v1.id, decision: 'REJECTED', reason: '薪资超出该职级带宽，请下调后重新提交。', actorId: manager.id } });
+  const ov1v2 = await prisma.offerVersion.create({ data: { offerId: offer1.id, version: 2, salary: '45000', startDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30), createdById: hr.id } });
+  await prisma.offerApproval.create({ data: { offerId: offer1.id, versionId: ov1v2.id, decision: 'SUBMITTED', actorId: hr.id } });
+
+  // Offer 2：审批通过、等待发送的 Offer（审批版本与当前版本一致）
+  const offer2 = await prisma.offer.create({ data: { candidateId: c2.id, jobId: job1.id, salary: '36000', startDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 35), status: OfferStatus.APPROVED, approverId: manager.id, version: 1, approvedVersion: 1 } });
+  const ov2v1 = await prisma.offerVersion.create({ data: { offerId: offer2.id, version: 1, salary: '36000', startDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 35), createdById: hr.id } });
+  await prisma.offerApproval.create({ data: { offerId: offer2.id, versionId: ov2v1.id, decision: 'SUBMITTED', actorId: hr.id } });
+  await prisma.offerApproval.create({ data: { offerId: offer2.id, versionId: ov2v1.id, decision: 'APPROVED', actorId: manager.id } });
+
   await prisma.auditLog.create({ data: { actorId: hr.id, action: 'Resume_STATUS_CHANGE', entity: 'Resume', entityId: r1.id, beforeStatus: 'SHORTLISTED', afterStatus: 'INTERVIEWING', reason: '通过电话初筛', ipAddress: '127.0.0.1', candidateId: c1.id } });
+  await prisma.auditLog.createMany({ data: [
+    { actorId: hr.id, action: 'Offer_STATUS_CHANGE', entity: 'Offer', entityId: offer1.id, beforeStatus: 'DRAFT', afterStatus: 'PENDING_APPROVAL', ipAddress: '127.0.0.1', candidateId: c1.id },
+    { actorId: manager.id, action: 'Offer_STATUS_CHANGE', entity: 'Offer', entityId: offer1.id, beforeStatus: 'PENDING_APPROVAL', afterStatus: 'REJECTED', reason: '薪资超出该职级带宽，请下调后重新提交。', ipAddress: '127.0.0.1', candidateId: c1.id },
+    { actorId: hr.id, action: 'Offer_STATUS_CHANGE', entity: 'Offer', entityId: offer1.id, beforeStatus: 'REJECTED', afterStatus: 'PENDING_APPROVAL', reason: '调整薪资与入职日期后重新提交', ipAddress: '127.0.0.1', candidateId: c1.id },
+    { actorId: hr.id, action: 'Offer_STATUS_CHANGE', entity: 'Offer', entityId: offer2.id, beforeStatus: 'DRAFT', afterStatus: 'PENDING_APPROVAL', ipAddress: '127.0.0.1', candidateId: c2.id },
+    { actorId: manager.id, action: 'Offer_STATUS_CHANGE', entity: 'Offer', entityId: offer2.id, beforeStatus: 'PENDING_APPROVAL', afterStatus: 'APPROVED', ipAddress: '127.0.0.1', candidateId: c2.id },
+  ] });
   console.log({ admin: admin.email, hr: hr.email, manager: manager.email, interviewer: interviewer.email, password: 'talentflow123' });
 }
 main().finally(() => prisma.$disconnect());
